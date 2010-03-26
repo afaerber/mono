@@ -572,11 +572,16 @@ AC_CONFIG_SUBDIRS(eglib)
 case $with_glib in
 embedded) 
   GLIB_CFLAGS='-I$(top_srcdir)/eglib/src -I$(top_builddir)/eglib/src'
-  GLIB_LIBS='-L$(top_builddir)/eglib/src -leglib -lm'
+  GLIB_LIBS='$(top_builddir)/eglib/src/libeglib.la'
   BUILD_GLIB_CFLAGS="$GLIB_CFLAGS"
-  BUILD_GLIB_LIBS="$GLIB_LIBS"
+  BUILD_GLIB_LIBS='-L$(top_builddir)/eglib/src/.libs -leglib -lm'
   GMODULE_CFLAGS="$GLIB_CFLAGS"
   GMODULE_LIBS="$GLIB_LIBS"
+  case "$host" in
+    *-*-haiku*)
+      BUILD_GLIB_LIBS='-L$(top_builddir)/eglib/src/.libs -leglib -liconv'
+      ;;
+  esac
   eglib_dir=eglib
   ;;
 system)
