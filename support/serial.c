@@ -64,6 +64,76 @@ typedef enum {
 	Rts = 16  /* Request to send */
 } MonoSerialSignal;
 
+#if defined(__HAIKU__)
+
+int
+open_serial (char* devfile)
+{
+	return -1;
+}
+
+int
+close_serial (int unix_fd)
+{
+	return 0;
+}
+
+guint32
+read_serial (int fd, guchar *buffer, int offset, int count)
+{
+	return 0;
+}
+
+int
+write_serial (int fd, guchar *buffer, int offset, int count, int timeout)
+{
+	return 0;
+}
+
+int
+discard_buffer (int fd, gboolean input)
+{
+	return 0;
+}
+
+gint32
+get_bytes_in_buffer (int fd, gboolean input)
+{
+	return 0;
+}
+
+gboolean
+set_attributes (int fd, int baud_rate, MonoParity parity, int dataBits, MonoStopBits stopBits, MonoHandshake handshake)
+{
+	return FALSE;
+}
+
+MonoSerialSignal
+get_signals (int fd, gint32 *error)
+{
+	return NoneSignal;
+}
+
+gint32
+set_signal (int fd, MonoSerialSignal signal, gboolean value)
+{
+	return -1;
+}
+
+int
+breakprop (int fd)
+{
+	return -1;
+}
+
+gboolean
+poll_serial (int fd, gint32 *error, int timeout)
+{
+	return FALSE;
+}
+
+#else
+
 int
 open_serial (char* devfile)
 {
@@ -439,6 +509,8 @@ poll_serial (int fd, gint32 *error, int timeout)
 
 	return (pinfo.revents & POLLIN) != 0 ? 1 : 0;
 }
+
+#endif
 
 /*
  * mono internals should not be used here.
