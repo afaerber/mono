@@ -266,6 +266,8 @@ case "$host" in
 	*-*-haiku*)
 		host_win32=no
 		CPPFLAGS="$CPPFLAGS -D_REENTRANT -D_THREAD_SAFE"
+		# SA_SIGINFO is currently commented out in Haiku's headers
+		CPPFLAGS="$CPPFLAGS -DSA_SIGINFO=0x40"
 		libmono_cflags="-D_REENTRANT -D_THREAD_SAFE"
 		libdl=
 		LIBS="$LIBS -lnetwork"

@@ -253,6 +253,65 @@ do_console_cancel_event (void)
 	mono_thread_pool_add ((MonoObject *) load_value, msg, NULL, NULL);
 }
 
+
+#define SIGHANDLER_SIGNATURE_SIGACTION	int signo, void *the_siginfo, void *data
+#define SIGHANDLER_PARAMS_SIGACTION	signo, the_siginfo, data
+#if defined(__HAIKU__)
+#define SIGHANDLER_SIGNATURE_HANDLER	int signo, char *userData, vregs regs
+#define SIGHANDLER_PARAMS_HANDLER	signo, userData, regs
+#else
+#define SIGHANDLER_SIGNATURE_HANDLER	int signo
+#define SIGHANDLER_PARAMS_HANDLER	signo
+#endif
+
+/* FIXME: move MONO_ARCH_USE_SIGACTION to central header? */
+#if !defined(__HAIKU__)
+#define MONO_ARCH_USE_SIGACTION
+#endif
+
+/* SIG_HANDLER_SIGNATURE and SIG_HANDLER_PARAMS synchronized with mini */
+#ifdef MONO_ARCH_USE_SIGACTION
+#define SIGHANDLER_SIGNATURE SIGHANDLER_SIGNATURE_SIGACTION
+#define SIG_HANDLER_PARAMS SIGHANDLER_PARAMS_SIGACTION
+#else
+#define SIGHANDLER_SIGNATURE SIGHANDLER_SIGNATURE_HANDLER
+#define SIG_HANDLER_PARAMS SIGHANDLER_PARAMS_HANDLER
+#endif
+#define SIG_HANDLER_SIGNATURE(ftn) ftn (SIGHANDLER_SIGNATURE)
+
+static inline gboolean
+is_sighandler_valid (void *sigh)
+{
+	return sigh != NULL &&
+		sigh != (void *)SIG_DFL &&
+		sigh != (void *)SIG_IGN;
+}
+
+static inline void
+invoke_sighandler_if_valid (struct sigaction *siga, SIGHANDLER_SIGNATURE)
+{
+	if (siga->sa_flags & SA_SIGINFO) {
+#ifdef MONO_ARCH_USE_SIGACTION
+		if (is_sighandler_valid (siga->sa_sigaction))
+			(*siga->sa_sigaction) (SIGHANDLER_PARAMS_SIGACTION);
+#endif
+	} else {
+		if (is_sighandler_valid (siga->sa_handler))
+#if (defined(__HAIKU__)) && defined(MONO_ARCH_USE_SIGACTION)
+			(*siga->sa_handler) (signo, NULL/*XXX*/,
+				*((ucontext_t *)data)->uc_mcontext/*XXX*/);
+#elif defined(__HAIKU__)
+			(*(void (*) (int, char *, vregs))siga->sa_handler) (SIGHANDLER_PARAMS_HANDLER);
+#else
+			(*siga->sa_handler) (SIGHANDLER_PARAMS_HANDLER);
+#endif
+	}
+}
+
+#define INVOKE_SIGHANDLER_IF_VALID(siga) \
+	invoke_sighandler_if_valid (&(siga), SIG_HANDLER_PARAMS)
+
+
 static gboolean in_sigint;
 static void
 sigint_handler (int signo)
@@ -273,7 +332,7 @@ sigint_handler (int signo)
 static struct sigaction save_sigcont, save_sigint, save_sigwinch;
 
 static void
-sigcont_handler (int signo, void *the_siginfo, void *data)
+SIG_HANDLER_SIGNATURE (sigcont_handler)
 {
 	// Ignore error, there is not much we can do in the sigcont handler.
 	tcsetattr (STDIN_FILENO, TCSANOW, &mono_attr);
@@ -282,24 +341,18 @@ sigcont_handler (int signo, void *the_siginfo, void *data)
 		write (STDOUT_FILENO, keypad_xmit_str, strlen (keypad_xmit_str));
 
 	// Call previous handler
-	if (save_sigcont.sa_sigaction != NULL &&
-	    save_sigcont.sa_sigaction != (void *)SIG_DFL &&
-	    save_sigcont.sa_sigaction != (void *)SIG_IGN)
-		(*save_sigcont.sa_sigaction) (signo, the_siginfo, data);
+	INVOKE_SIGHANDLER_IF_VALID (save_sigcont);
 }
 
 static void
-sigwinch_handler (int signo, void *the_siginfo, void *data)
+SIG_HANDLER_SIGNATURE (sigwinch_handler)
 {
 	int dims = terminal_get_dimensions ();
 	if (dims != -1)
 		cols_and_lines = dims;
 	
 	// Call previous handler
-	if (save_sigwinch.sa_sigaction != NULL &&
-	    save_sigwinch.sa_sigaction != (void *)SIG_DFL &&
-	    save_sigwinch.sa_sigaction != (void *)SIG_IGN)
-		(*save_sigwinch.sa_sigaction) (signo, the_siginfo, data);
+	INVOKE_SIGHANDLER_IF_VALID (save_sigwinch);
 }
 
 /*
@@ -332,8 +385,13 @@ console_set_signal_handlers ()
 	memset (&sigwinch, 0, sizeof (struct sigaction));
 	
 	// Continuing
+#ifdef MONO_ARCH_USE_SIGACTION
+	sigcont.sa_sigaction = (void *) sigcont_handler;
+	sigcont.sa_flags = SA_SIGINFO;
+#else
 	sigcont.sa_handler = (void *) sigcont_handler;
 	sigcont.sa_flags = 0;
+#endif
 	sigemptyset (&sigcont.sa_mask);
 	sigaction (SIGCONT, &sigcont, &save_sigcont);
 	
@@ -344,8 +402,13 @@ console_set_signal_handlers ()
 	sigaction (SIGINT, &sigint, &save_sigint);
 
 	// Window size changed
+#ifdef MONO_ARCH_USE_SIGACTION
+	sigwinch.sa_sigaction = (void *) sigwinch_handler;
+	sigwinch.sa_flags = SA_SIGINFO;
+#else
 	sigwinch.sa_handler = (void *) sigwinch_handler;
 	sigwinch.sa_flags = 0;
+#endif
 	sigemptyset (&sigwinch.sa_mask);
 	sigaction (SIGWINCH, &sigwinch, &save_sigwinch);
 }
